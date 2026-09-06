@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile document stored under users/{userId}",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 255 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "Multi-turn AI study chat session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 120 },
+        "subject": { "type": "string", "maxLength": 80 },
+        "messages": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "messages"]
+    },
+    "SmartNote": {
+      "title": "SmartNote",
+      "description": "AI-generated structured study note",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 100 },
+        "topic": { "type": "string", "maxLength": 150 },
+        "rawContent": { "type": "string", "maxLength": 15000 },
+        "summary": { "type": "string", "maxLength": 10000 },
+        "keyConcepts": { "type": "array" },
+        "keyDefinitions": { "type": "array" },
+        "revisionPoints": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "subject", "topic", "summary"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "AI-generated quiz with questions and student attempt history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 100 },
+        "topic": { "type": "string", "maxLength": 150 },
+        "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+        "questionType": { "type": "string", "enum": ["mcq", "true_false", "short_answer"] },
+        "questions": { "type": "array" },
+        "attempts": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "subject", "topic", "questions"]
+    },
+    "StudyPlan": {
+      "title": "StudyPlan",
+      "description": "AI-generated study schedule and progress tracker",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "examName": { "type": "string", "maxLength": 150 },
+        "examDate": { "type": "string", "maxLength": 30 },
+        "availableHoursPerDay": { "type": "number" },
+        "subjects": { "type": "array" },
+        "tasks": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "examName", "tasks"]
+    },
+    "DailyReflection": {
+      "title": "DailyReflection",
+      "description": "Daily student learning reflection with AI analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 30 },
+        "learnedContent": { "type": "string", "maxLength": 5000 },
+        "summary": { "type": "string", "maxLength": 5000 },
+        "keyTakeaway": { "type": "string", "maxLength": 2000 },
+        "areasNeedingRevision": { "type": "array" },
+        "suggestedNextStep": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "date", "learnedContent", "summary"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document isolated to the owner"
+    },
+    "/users/{userId}/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/ChatSession" },
+      "description": "Conversations stored under the owner's UID"
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/SmartNote" },
+      "description": "Smart notes stored under the owner's UID"
+    },
+    "/users/{userId}/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/Quiz" },
+      "description": "Quizzes stored under the owner's UID"
+    },
+    "/users/{userId}/studyPlans/{planId}": {
+      "schema": { "$ref": "#/entities/StudyPlan" },
+      "description": "Study plans and tasks stored under the owner's UID"
+    },
+    "/users/{userId}/reflections/{reflectionId}": {
+      "schema": { "$ref": "#/entities/DailyReflection" },
+      "description": "Daily reflections stored under the owner's UID"
+    }
+  }
+}

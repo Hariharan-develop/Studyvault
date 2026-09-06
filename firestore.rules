@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny all queries and documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Root users collection
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidId(userId);
+      allow delete: if false;
+
+      // Isolated User Chats
+      match /chats/{chatId} {
+        allow get: if isOwner(userId) && isValidId(chatId);
+        allow list: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId) && isValidId(chatId);
+      }
+
+      // Isolated User Smart Notes
+      match /notes/{noteId} {
+        allow get: if isOwner(userId) && isValidId(noteId);
+        allow list: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId) && isValidId(noteId);
+      }
+
+      // Isolated User Quizzes
+      match /quizzes/{quizId} {
+        allow get: if isOwner(userId) && isValidId(quizId);
+        allow list: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId) && isValidId(quizId);
+      }
+
+      // Isolated User Study Plans
+      match /studyPlans/{planId} {
+        allow get: if isOwner(userId) && isValidId(planId);
+        allow list: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId) && isValidId(planId);
+      }
+
+      // Isolated User Daily Reflections
+      match /reflections/{reflectionId} {
+        allow get: if isOwner(userId) && isValidId(reflectionId);
+        allow list: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId) && isValidId(reflectionId);
+      }
+
+      // Isolated User Study Materials
+      match /studyMaterials/{materialId} {
+        allow get: if isOwner(userId) && isValidId(materialId);
+        allow list: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId) && isValidId(materialId);
+
+        match /chunks/{chunkId} {
+          allow get, list, create, update, delete: if isOwner(userId) && isValidId(chunkId);
+        }
+      }
+
+      // Isolated User Settings
+      match /settings/{settingId} {
+        allow get, list, create, update, delete: if isOwner(userId) && isValidId(settingId);
+      }
+    }
+  }
+}

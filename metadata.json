@@ -1,0 +1,6 @@
+{
+  "name": "StudyVault AI – Private AI Learning Companion",
+  "description": "A private, AI-powered learning workspace where students sign in with Google, converse with Gemini, generate smart notes, take quizzes, plan studies, and securely store learning history in isolated Firestore documents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
