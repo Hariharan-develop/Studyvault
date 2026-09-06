@@ -1,11 +1,84 @@
 import { SourceMode, AnswerFormat, StudyMaterial, ReferencedSource } from "../types";
+import { auth } from "./firebase";
 
 export interface GroundedChatResponse {
+  success?: boolean;
   reply: string;
+  response?: string;
   referencedSources?: ReferencedSource[];
   modelUsed?: string;
   sourceMode?: SourceMode;
   answerFormat?: AnswerFormat;
+}
+
+/**
+ * Retrieves the current user's Firebase ID token and generates authorization headers.
+ */
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  try {
+    if (auth.currentUser) {
+      const token = await auth.currentUser.getIdToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not attach Firebase auth token:", err);
+  }
+  return headers;
+}
+
+/**
+ * Safely executes API requests, protecting against non-JSON / HTML 404 / 500 error pages.
+ */
+async function safeApiCall<T = any>(
+  endpoint: string,
+  payload: any,
+  defaultErrorMessage: string
+): Promise<T> {
+  const headers = await getAuthHeaders();
+  let response: Response;
+
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+  } catch (networkErr: any) {
+    throw new Error(`Network error: Unable to reach ${endpoint}. Please check your connection.`);
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+
+  // Prevent SyntaxError: Unexpected token 'T', "The page c"...
+  if (!isJson) {
+    if (response.status === 404) {
+      throw new Error(
+        `Backend endpoint ${endpoint} was not found (404). Please ensure Vercel Serverless Functions are deployed.`
+      );
+    }
+    throw new Error(
+      `Server returned unexpected ${response.status} (${response.statusText || "Non-JSON response"}).`
+    );
+  }
+
+  let data: any;
+  try {
+    data = await response.json();
+  } catch (jsonErr: any) {
+    throw new Error(`Failed to parse response from ${endpoint}: Invalid JSON format.`);
+  }
+
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || defaultErrorMessage);
+  }
+
+  return data as T;
 }
 
 export async function askStudyChat(
@@ -18,23 +91,18 @@ export async function askStudyChat(
     selectedMaterials?: StudyMaterial[];
   }
 ): Promise<GroundedChatResponse> {
-  const response = await fetch("/api/gemini/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  return safeApiCall<GroundedChatResponse>(
+    "/api/gemini/chat",
+    {
       messages,
       subject,
       sourceMode: options?.sourceMode || "gemini_only",
       studyInstructions: options?.studyInstructions || "",
       answerFormat: options?.answerFormat || "text",
       selectedMaterials: options?.selectedMaterials || [],
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to get response from Gemini Study Chat");
-  }
-  return data;
+    },
+    "Failed to get response from Gemini Study Chat"
+  );
 }
 
 export async function processStudyMaterial(payload: {
@@ -47,29 +115,19 @@ export async function processStudyMaterial(payload: {
   base64Content?: string;
   textContent?: string;
 }) {
-  const response = await fetch("/api/materials/process", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to process and index study material");
-  }
-  return data;
+  return safeApiCall(
+    "/api/materials/process",
+    payload,
+    "Failed to process and index study material"
+  );
 }
 
 export async function generateSmartNotes(subject: string, topic: string, content: string) {
-  const response = await fetch("/api/gemini/notes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ subject, topic, content }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to generate smart notes");
-  }
-  return data;
+  return safeApiCall(
+    "/api/gemini/notes",
+    { subject, topic, content },
+    "Failed to generate smart notes"
+  );
 }
 
 export async function generateQuiz(payload: {
@@ -80,16 +138,11 @@ export async function generateQuiz(payload: {
   difficulty: "easy" | "medium" | "hard";
   questionType: "mcq" | "true_false" | "short_answer";
 }) {
-  const response = await fetch("/api/gemini/quiz", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to generate quiz questions");
-  }
-  return data;
+  return safeApiCall(
+    "/api/gemini/quiz",
+    payload,
+    "Failed to generate quiz questions"
+  );
 }
 
 export async function evaluateQuizFeedback(payload: {
@@ -100,16 +153,11 @@ export async function evaluateQuizFeedback(payload: {
   questions: any[];
   answers: Record<number, string>;
 }) {
-  const response = await fetch("/api/gemini/quiz-feedback", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to evaluate quiz feedback");
-  }
-  return data;
+  return safeApiCall(
+    "/api/gemini/quiz-feedback",
+    payload,
+    "Failed to evaluate quiz feedback"
+  );
 }
 
 export async function generateStudyPlan(payload: {
@@ -129,27 +177,17 @@ export async function generateStudyPlan(payload: {
     description?: string;
   }>;
 }) {
-  const response = await fetch("/api/gemini/study-plan", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to generate study plan");
-  }
-  return data;
+  return safeApiCall(
+    "/api/gemini/study-plan",
+    payload,
+    "Failed to generate study plan"
+  );
 }
 
 export async function analyzeDailyReflection(learnedContent: string, date: string) {
-  const response = await fetch("/api/gemini/reflection", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ learnedContent, date }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to analyze reflection");
-  }
-  return data;
+  return safeApiCall(
+    "/api/gemini/reflection",
+    { learnedContent, date },
+    "Failed to analyze reflection"
+  );
 }
