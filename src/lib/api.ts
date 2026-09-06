@@ -25,8 +25,8 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
         headers["Authorization"] = `Bearer ${token}`;
       }
     }
-  } catch (err) {
-    console.warn("Could not attach Firebase auth token:", err);
+  } catch {
+    // Safe failure: token omitted, handled by server authentication
   }
   return headers;
 }
@@ -48,30 +48,24 @@ async function safeApiCall<T = any>(
       headers,
       body: JSON.stringify(payload),
     });
-  } catch (networkErr: any) {
-    throw new Error(`Network error: Unable to reach ${endpoint}. Please check your connection.`);
+  } catch {
+    throw new Error("AI service is temporarily unavailable.");
   }
 
   const contentType = response.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
 
-  // Prevent SyntaxError: Unexpected token 'T', "The page c"...
+  // Prevent SyntaxError: Unexpected token 'T'
   if (!isJson) {
-    if (response.status === 404) {
-      throw new Error(
-        `Backend endpoint ${endpoint} was not found (404). Please ensure Vercel Serverless Functions are deployed.`
-      );
-    }
-    throw new Error(
-      `Server returned unexpected ${response.status} (${response.statusText || "Non-JSON response"}).`
-    );
+    console.warn(`[API] Non-JSON response from ${endpoint} (Status ${response.status})`);
+    throw new Error("AI service is temporarily unavailable.");
   }
 
   let data: any;
   try {
     data = await response.json();
-  } catch (jsonErr: any) {
-    throw new Error(`Failed to parse response from ${endpoint}: Invalid JSON format.`);
+  } catch {
+    throw new Error("AI service is temporarily unavailable.");
   }
 
   if (!response.ok || data?.success === false) {

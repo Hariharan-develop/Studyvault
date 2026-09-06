@@ -2,10 +2,20 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { handleQuizFeedback } from "../_shared/geminiService";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") {
+  try {
     res.setHeader("Content-Type", "application/json");
-    res.status(405).json({ success: false, error: "Method not allowed. Use POST." });
-    return;
+    if (req.method !== "POST") {
+      return res.status(405).json({ success: false, error: "Method not allowed. Use POST." });
+    }
+    return await handleQuizFeedback(req, res);
+  } catch (fatalError: any) {
+    console.error("Gemini quiz-feedback API failure:", fatalError?.message || "Unhandled runtime error");
+    if (!res.headersSent) {
+      res.setHeader("Content-Type", "application/json");
+      return res.status(500).json({
+        success: false,
+        error: "Internal server error"
+      });
+    }
   }
-  return handleQuizFeedback(req, res);
 }

@@ -11,17 +11,27 @@ export const MODEL_FALLBACK_LADDER = [
   "gemini-3.8-flash"
 ];
 
+// Helper to safely check GEMINI_API_KEY without throwing uncaught exceptions
+export function checkGeminiApiKey(res: any): boolean {
+  if (!process.env.GEMINI_API_KEY) {
+    res.setHeader?.("Content-Type", "application/json");
+    res.status(500).json({
+      success: false,
+      error: "Gemini API key is not configured"
+    });
+    return false;
+  }
+  return true;
+}
+
 // Lazy-initialized GoogleGenAI Client
 let genAIClient: GoogleGenAI | null = null;
 export function getGenAI(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Gemini API key is not configured");
+  }
   if (!genAIClient) {
-    // Strictly server-side only environment variable
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        "GEMINI_API_KEY environment variable is missing. Please configure it in your Vercel Project Settings or .env file."
-      );
-    }
     genAIClient = new GoogleGenAI({
       apiKey,
       httpOptions: {
@@ -52,16 +62,12 @@ export async function generateContentWithFallback(
     } catch (err: any) {
       lastError = err;
       const statusCode = err?.status || err?.statusCode || 500;
-      console.warn(
-        `[Gemini Fallback] Model ${model} unavailable (status ${statusCode}); switching to next in ladder...`
-      );
       if (statusCode === 400 && !err?.message?.includes("not supported")) {
         throw err;
       }
     }
   }
 
-  console.error("All models in the Gemini fallback ladder failed:", lastError?.message || lastError);
   throw lastError || new Error("All models in the fallback ladder failed to generate content.");
 }
 
@@ -70,7 +76,6 @@ export function cleanAndParseJson<T = any>(rawText: string | undefined | null, f
   if (!rawText || typeof rawText !== "string") return fallback;
   let clean = rawText.trim();
 
-  // Strip Markdown code fences: ```json ... ``` or ``` ... ```
   if (clean.startsWith("```")) {
     clean = clean.replace(/^```(?:json)?\s*/i, "");
     clean = clean.replace(/\s*```$/, "");
@@ -98,9 +103,31 @@ export function cleanAndParseJson<T = any>(rawText: string | undefined | null, f
       } catch {}
     }
 
-    console.warn("cleanAndParseJson fallback used for text:", clean.slice(0, 150));
     return fallback;
   }
+}
+
+// Safely normalize and parse request body in Vercel / Express
+export function parseRequestBody<T = any>(req: any): T {
+  if (!req) return {} as T;
+  let body = req.body;
+  if (!body) return {} as T;
+
+  if (Buffer.isBuffer(body)) {
+    try {
+      body = JSON.parse(body.toString("utf-8"));
+    } catch {
+      return {} as T;
+    }
+  } else if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return {} as T;
+    }
+  }
+
+  return (typeof body === "object" && body !== null ? body : {}) as T;
 }
 
 // Chunk scoring utility for retrieval
@@ -219,7 +246,7 @@ export function createLocalChunks(
 // 1. Health Check
 export async function handleHealth(_req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
-  res.status(200).json({
+  return res.status(200).json({
     success: true,
     status: "ok",
     timestamp: new Date().toISOString()
@@ -229,11 +256,12 @@ export async function handleHealth(_req: any, res: any) {
 // 2. Study Material Processing & Multimodal Extraction
 export async function handleProcessMaterial(req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
+  if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
   if (!authUser) return;
 
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const body = parseRequestBody(req);
     const {
       materialId = `mat_${Date.now()}`,
       fileName = "document",
@@ -250,12 +278,12 @@ export async function handleProcessMaterial(req: any, res: any) {
 
     const isImageOrPdf =
       ["pdf", "png", "jpg", "jpeg", "webp"].includes(String(fileType).toLowerCase()) ||
-      base64Content.startsWith("data:image/") ||
-      base64Content.startsWith("data:application/pdf");
+      String(base64Content).startsWith("data:image/") ||
+      String(base64Content).startsWith("data:application/pdf");
 
     if (isImageOrPdf && base64Content) {
       try {
-        const cleanBase64 = base64Content.replace(/^data:.*?;base64,/, "").trim();
+        const cleanBase64 = String(base64Content).replace(/^data:.*?;base64,/, "").trim();
         let mimeType = "application/pdf";
         if (fileType.toLowerCase().includes("png")) mimeType = "image/png";
         else if (fileType.toLowerCase().includes("jpg") || fileType.toLowerCase().includes("jpeg")) mimeType = "image/jpeg";
@@ -321,12 +349,11 @@ Structure your response strictly as valid JSON matching this schema:
           }));
         }
       } catch (geminiErr: any) {
-        console.warn("Multimodal extraction fallback to text decoding:", geminiErr?.message);
         if (textContent) {
           extractedText = textContent;
         } else if (base64Content) {
           try {
-            const cleanBase64 = base64Content.replace(/^data:.*?;base64,/, "").trim();
+            const cleanBase64 = String(base64Content).replace(/^data:.*?;base64,/, "").trim();
             extractedText = Buffer.from(cleanBase64, "base64").toString("utf-8");
           } catch {}
         }
@@ -336,7 +363,7 @@ Structure your response strictly as valid JSON matching this schema:
         extractedText = textContent;
       } else if (base64Content) {
         try {
-          const cleanBase64 = base64Content.replace(/^data:.*?;base64,/, "").trim();
+          const cleanBase64 = String(base64Content).replace(/^data:.*?;base64,/, "").trim();
           extractedText = Buffer.from(cleanBase64, "base64").toString("utf-8");
         } catch {
           extractedText = "";
@@ -355,7 +382,7 @@ Structure your response strictly as valid JSON matching this schema:
       summary = `Processed study material: ${fileName} in ${subject}.`;
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       processingStatus: "ready",
       extractedText,
@@ -364,11 +391,11 @@ Structure your response strictly as valid JSON matching this schema:
       chunks
     });
   } catch (error: any) {
-    console.error("Document processing error:", error);
-    res.status(500).json({
+    console.error("Gemini chat API failure:", error?.message || "Document processing error");
+    return res.status(500).json({
       success: false,
       processingStatus: "failed",
-      error: error?.message || "An unexpected error occurred during document processing."
+      error: "An unexpected error occurred during document processing."
     });
   }
 }
@@ -376,11 +403,12 @@ Structure your response strictly as valid JSON matching this schema:
 // 3. Multi-turn AI Study Chat
 export async function handleChat(req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
+  if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
   if (!authUser) return;
 
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const body = parseRequestBody(req);
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const subject = typeof body.subject === "string" ? body.subject.slice(0, 100) : "General Study";
     const sourceMode = ["materials_only", "materials_plus_gemini", "gemini_only"].includes(body.sourceMode)
@@ -391,8 +419,7 @@ export async function handleChat(req: any, res: any) {
     const selectedMaterials = Array.isArray(body.selectedMaterials) ? body.selectedMaterials : [];
 
     if (messages.length === 0) {
-      res.status(400).json({ success: false, error: "At least one message is required." });
-      return;
+      return res.status(400).json({ success: false, error: "At least one message is required." });
     }
 
     const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
@@ -463,7 +490,7 @@ export async function handleChat(req: any, res: any) {
 
     if (sourceMode === "materials_only" && referencedSources.length === 0 && selectedMaterials.length > 0) {
       const fallbackReply = `I am operating in **Strict Materials Only** mode, but couldn't find matching concepts in your checked study materials for "${queryPrompt.slice(0, 80)}". Please switch to **Selected + Gemini** or upload relevant lecture notes.`;
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         reply: fallbackReply,
         response: fallbackReply,
@@ -472,7 +499,6 @@ export async function handleChat(req: any, res: any) {
         sourceMode,
         answerFormat
       });
-      return;
     }
 
     let groundingConstraint = "";
@@ -535,7 +561,7 @@ ${formatGuideline}`;
 
     const reply = response.text || "I was unable to generate a response. Please try asking in a different way.";
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       reply,
       response: reply,
@@ -545,10 +571,10 @@ ${formatGuideline}`;
       answerFormat
     });
   } catch (error: any) {
-    console.error("Chat API error:", error);
-    res.status(500).json({
+    console.error("Gemini chat API failure:", error?.message || "Internal error");
+    return res.status(500).json({
       success: false,
-      error: error?.message || "An unexpected error occurred while communicating with Gemini."
+      error: "Unable to generate response"
     });
   }
 }
@@ -556,18 +582,18 @@ ${formatGuideline}`;
 // 4. Smart Notes Generator
 export async function handleNotes(req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
+  if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
   if (!authUser) return;
 
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const body = parseRequestBody(req);
     const subject = typeof body.subject === "string" ? body.subject.slice(0, 100) : "General";
     const topic = typeof body.topic === "string" ? body.topic.slice(0, 150) : "Overview";
     const content = typeof body.content === "string" ? body.content.slice(0, 15000) : "";
 
     if (!content.trim()) {
-      res.status(400).json({ success: false, error: "Study content or class notes cannot be empty." });
-      return;
+      return res.status(400).json({ success: false, error: "Study content or class notes cannot be empty." });
     }
 
     const systemInstruction = `You are an expert academic curriculum summarizer and cognitive learning specialist.
@@ -625,16 +651,16 @@ Strictly return a valid JSON object matching this structure:
       };
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       result: parsed,
       modelUsed
     });
   } catch (error: any) {
-    console.error("Notes API error:", error);
-    res.status(500).json({
+    console.error("Gemini chat API failure:", error?.message || "Notes generation error");
+    return res.status(500).json({
       success: false,
-      error: error?.message || "Failed to generate smart notes."
+      error: "Unable to generate notes"
     });
   }
 }
@@ -642,11 +668,12 @@ Strictly return a valid JSON object matching this structure:
 // 5. AI Quiz Generator
 export async function handleQuiz(req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
+  if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
   if (!authUser) return;
 
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const body = parseRequestBody(req);
     const subject = typeof body.subject === "string" ? body.subject.slice(0, 100) : "General";
     const topic = typeof body.topic === "string" ? body.topic.slice(0, 150) : "General Knowledge";
     const content = typeof body.content === "string" ? body.content.slice(0, 12000) : "";
@@ -683,16 +710,16 @@ Strict JSON output format:
     });
 
     const parsed = cleanAndParseJson(response.text, { questions: [] });
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       questions: parsed.questions || [],
       modelUsed
     });
   } catch (error: any) {
-    console.error("Quiz API error:", error);
-    res.status(500).json({
+    console.error("Gemini chat API failure:", error?.message || "Quiz generation error");
+    return res.status(500).json({
       success: false,
-      error: error?.message || "Failed to generate quiz."
+      error: "Unable to generate quiz"
     });
   }
 }
@@ -700,11 +727,12 @@ Strict JSON output format:
 // 6. Quiz Feedback Evaluator
 export async function handleQuizFeedback(req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
+  if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
   if (!authUser) return;
 
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const body = parseRequestBody(req);
     const subject = typeof body.subject === "string" ? body.subject : "Subject";
     const topic = typeof body.topic === "string" ? body.topic : "Topic";
     const score = Number(body.score) || 0;
@@ -738,16 +766,16 @@ Keep it constructive, inspiring, and concise (under 250 words).`;
       }
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       feedback: response.text || "Great effort completing the quiz! Keep reviewing your missed questions.",
       modelUsed
     });
   } catch (error: any) {
-    console.error("Quiz Feedback API error:", error);
-    res.status(500).json({
+    console.error("Gemini chat API failure:", error?.message || "Quiz feedback error");
+    return res.status(500).json({
       success: false,
-      error: error?.message || "Failed to generate quiz feedback."
+      error: "Unable to evaluate quiz feedback"
     });
   }
 }
@@ -755,11 +783,12 @@ Keep it constructive, inspiring, and concise (under 250 words).`;
 // 7. AI Study Planner
 export async function handleStudyPlan(req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
+  if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
   if (!authUser) return;
 
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const body = parseRequestBody(req);
     const examName = typeof body.examName === "string" ? body.examName.slice(0, 100) : "Final Exam";
     const examDate = typeof body.examDate === "string" ? body.examDate : "";
     const subjects = Array.isArray(body.subjects) ? body.subjects.slice(0, 10) : [];
@@ -837,16 +866,16 @@ Generate an optimal schedule with between 8 and 24 actionable study tasks fallin
     });
 
     const parsed = cleanAndParseJson(response.text, { planSummary: "Study Schedule", tasks: [] });
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       plan: parsed,
       modelUsed
     });
   } catch (error: any) {
-    console.error("Study Planner API error:", error);
-    res.status(500).json({
+    console.error("Gemini chat API failure:", error?.message || "Study plan error");
+    return res.status(500).json({
       success: false,
-      error: error?.message || "Failed to generate study plan."
+      error: "Unable to generate study plan"
     });
   }
 }
@@ -854,17 +883,17 @@ Generate an optimal schedule with between 8 and 24 actionable study tasks fallin
 // 8. Daily Reflection Analysis
 export async function handleReflection(req: any, res: any) {
   res.setHeader?.("Content-Type", "application/json");
+  if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
   if (!authUser) return;
 
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const body = parseRequestBody(req);
     const learnedContent = typeof body.learnedContent === "string" ? body.learnedContent.slice(0, 5000) : "";
     const date = typeof body.date === "string" ? body.date : new Date().toISOString().split("T")[0];
 
     if (!learnedContent.trim()) {
-      res.status(400).json({ success: false, error: "Reflection text cannot be empty." });
-      return;
+      return res.status(400).json({ success: false, error: "Reflection text cannot be empty." });
     }
 
     const systemInstruction = `You are an empathetic learning mentor and metacognitive coach.
@@ -896,16 +925,16 @@ Output strictly JSON:
       suggestedNextStep: "Review key definitions before tomorrow's session."
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       result: parsed,
       modelUsed
     });
   } catch (error: any) {
-    console.error("Reflection API error:", error);
-    res.status(500).json({
+    console.error("Gemini chat API failure:", error?.message || "Reflection error");
+    return res.status(500).json({
       success: false,
-      error: error?.message || "Failed to analyze reflection."
+      error: "Unable to analyze reflection"
     });
   }
 }
