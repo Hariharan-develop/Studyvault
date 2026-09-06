@@ -72,9 +72,13 @@ function cleanAndParseJson<T = any>(rawText: string | undefined | null, fallback
 let genAIClient: GoogleGenAI | null = null;
 function getGenAI(): GoogleGenAI {
   if (!genAIClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.VITE_FIREBASE_API_KEY ||
+      process.env.FIREBASE_API_KEY;
     if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is missing. Please configure it in your Settings > Secrets.");
+      throw new Error("GEMINI_API_KEY environment variable is missing. Please configure it in your .env file.");
     }
     genAIClient = new GoogleGenAI({
       apiKey,
