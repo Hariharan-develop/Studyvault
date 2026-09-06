@@ -1,15 +1,14 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { handleQuizFeedback } from "../_shared/geminiService";
+import { handleStudyPlan } from "../_shared/geminiService.js";
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req, res) {
   try {
     res.setHeader("Content-Type", "application/json");
     if (req.method !== "POST") {
       return res.status(405).json({ success: false, error: "Method not allowed. Use POST." });
     }
-    return await handleQuizFeedback(req, res);
-  } catch (fatalError: any) {
-    console.error("Gemini quiz-feedback API failure:", fatalError?.message || "Unhandled runtime error");
+    return await handleStudyPlan(req, res);
+  } catch (fatalError) {
+    console.error("Gemini study-plan API failure:", fatalError?.message || "Unhandled runtime error");
     if (!res.headersSent) {
       res.setHeader("Content-Type", "application/json");
       return res.status(500).json({

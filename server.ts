@@ -11,7 +11,7 @@ import {
   handleQuizFeedback,
   handleStudyPlan,
   handleReflection
-} from "./api/_shared/geminiService";
+} from "./api/_shared/geminiService.js";
 
 dotenv.config();
 

@@ -1,11 +1,10 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { handleHealth } from "./_shared/geminiService";
+import { handleHealth } from "./_shared/geminiService.js";
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req, res) {
   try {
     res.setHeader("Content-Type", "application/json");
     return await handleHealth(req, res);
-  } catch (fatalError: any) {
+  } catch (fatalError) {
     console.error("Health API failure:", fatalError?.message || "Unhandled error");
     if (!res.headersSent) {
       res.setHeader("Content-Type", "application/json");

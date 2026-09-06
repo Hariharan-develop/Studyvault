@@ -1,14 +1,13 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { handleChat } from "../_shared/geminiService";
+import { handleChat } from "../_shared/geminiService.js";
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req, res) {
   try {
     res.setHeader("Content-Type", "application/json");
     if (req.method !== "POST") {
       return res.status(405).json({ success: false, error: "Method not allowed. Use POST." });
     }
     return await handleChat(req, res);
-  } catch (fatalError: any) {
+  } catch (fatalError) {
     console.error("Gemini chat API failure:", fatalError?.message || "Unhandled runtime error");
     if (!res.headersSent) {
       res.setHeader("Content-Type", "application/json");

@@ -1,15 +1,3 @@
-export interface AuthenticatedUser {
-  uid: string;
-  email?: string;
-}
-
-export interface AuthVerificationResult {
-  authenticated: boolean;
-  user?: AuthenticatedUser;
-  status?: number;
-  error?: string;
-}
-
 const DEFAULT_PROJECT_ID = "gen-lang-client-0548172331";
 const DEFAULT_API_KEY = "AIzaSyCsUsng3ztdWO9rIRDbrBsQvJM_mgWo3P4";
 
@@ -18,7 +6,7 @@ const DEFAULT_API_KEY = "AIzaSyCsUsng3ztdWO9rIRDbrBsQvJM_mgWo3P4";
  * Works natively in Vercel Serverless Functions and Cloud Run without requiring
  * Firebase Admin SDK or Google Cloud Application Default Credentials.
  */
-export async function verifyFirebaseToken(req: any): Promise<AuthVerificationResult> {
+export async function verifyFirebaseToken(req) {
   const isProduction =
     process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
 
@@ -104,7 +92,7 @@ export async function verifyFirebaseToken(req: any): Promise<AuthVerificationRes
           clearTimeout(timeoutId);
 
           if (verifyRes.ok) {
-            const verifyData: any = await verifyRes.json();
+            const verifyData = await verifyRes.json();
             const userRecord = verifyData.users?.[0];
             if (userRecord?.localId) {
               return {
@@ -116,7 +104,7 @@ export async function verifyFirebaseToken(req: any): Promise<AuthVerificationRes
               };
             }
           } else {
-            const errData: any = await verifyRes.json().catch(() => ({}));
+            const errData = await verifyRes.json().catch(() => ({}));
             const errMsg =
               errData?.error?.message === "TOKEN_EXPIRED"
                 ? "Unauthorized: Authentication token has expired"
@@ -127,8 +115,7 @@ export async function verifyFirebaseToken(req: any): Promise<AuthVerificationRes
               error: errMsg,
             };
           }
-        } catch (fetchErr: any) {
-          // If network call timed out, rely on the validated JWT claims
+        } catch (fetchErr) {
           if (payload.sub) {
             return {
               authenticated: true,
@@ -151,7 +138,7 @@ export async function verifyFirebaseToken(req: any): Promise<AuthVerificationRes
         status: 401,
         error: "Unauthorized: Invalid token payload",
       };
-    } catch (err: any) {
+    } catch (err) {
       return {
         authenticated: false,
         status: 401,
@@ -183,7 +170,7 @@ export async function verifyFirebaseToken(req: any): Promise<AuthVerificationRes
  * Guard utility for serverless & Express handlers.
  * Sends JSON 401 response if authentication fails.
  */
-export async function requireAuth(req: any, res: any): Promise<AuthenticatedUser | null> {
+export async function requireAuth(req, res) {
   const result = await verifyFirebaseToken(req);
   if (!result.authenticated || !result.user) {
     res.setHeader?.("Content-Type", "application/json");

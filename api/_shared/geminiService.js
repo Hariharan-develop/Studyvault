@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { requireAuth } from "./auth";
+import { requireAuth } from "./auth.js";
 
 // Model Fallback Ladder strictly adhering to Production Directives
 export const MODEL_FALLBACK_LADDER = [
@@ -12,7 +12,7 @@ export const MODEL_FALLBACK_LADDER = [
 ];
 
 // Helper to safely check GEMINI_API_KEY without throwing uncaught exceptions
-export function checkGeminiApiKey(res: any): boolean {
+export function checkGeminiApiKey(res) {
   if (!process.env.GEMINI_API_KEY) {
     res.setHeader?.("Content-Type", "application/json");
     res.status(500).json({
@@ -25,8 +25,8 @@ export function checkGeminiApiKey(res: any): boolean {
 }
 
 // Lazy-initialized GoogleGenAI Client
-let genAIClient: GoogleGenAI | null = null;
-export function getGenAI(): GoogleGenAI {
+let genAIClient = null;
+export function getGenAI() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("Gemini API key is not configured");
@@ -45,11 +45,9 @@ export function getGenAI(): GoogleGenAI {
 }
 
 // Resilient fallback executor with automated Error Recovery Matrix
-export async function generateContentWithFallback(
-  requestParams: Omit<Parameters<GoogleGenAI["models"]["generateContent"]>[0], "model">
-) {
+export async function generateContentWithFallback(requestParams) {
   const ai = getGenAI();
-  let lastError: any = null;
+  let lastError = null;
 
   for (let i = 0; i < MODEL_FALLBACK_LADDER.length; i++) {
     const model = MODEL_FALLBACK_LADDER[i];
@@ -59,7 +57,7 @@ export async function generateContentWithFallback(
         model
       });
       return { response, modelUsed: model };
-    } catch (err: any) {
+    } catch (err) {
       lastError = err;
       const statusCode = err?.status || err?.statusCode || 500;
       if (statusCode === 400 && !err?.message?.includes("not supported")) {
@@ -72,7 +70,7 @@ export async function generateContentWithFallback(
 }
 
 // Robust JSON extraction and parsing utility that strips markdown backticks
-export function cleanAndParseJson<T = any>(rawText: string | undefined | null, fallback: T): T {
+export function cleanAndParseJson(rawText, fallback) {
   if (!rawText || typeof rawText !== "string") return fallback;
   let clean = rawText.trim();
 
@@ -108,30 +106,30 @@ export function cleanAndParseJson<T = any>(rawText: string | undefined | null, f
 }
 
 // Safely normalize and parse request body in Vercel / Express
-export function parseRequestBody<T = any>(req: any): T {
-  if (!req) return {} as T;
+export function parseRequestBody(req) {
+  if (!req) return {};
   let body = req.body;
-  if (!body) return {} as T;
+  if (!body) return {};
 
   if (Buffer.isBuffer(body)) {
     try {
       body = JSON.parse(body.toString("utf-8"));
     } catch {
-      return {} as T;
+      return {};
     }
   } else if (typeof body === "string") {
     try {
       body = JSON.parse(body);
     } catch {
-      return {} as T;
+      return {};
     }
   }
 
-  return (typeof body === "object" && body !== null ? body : {}) as T;
+  return (typeof body === "object" && body !== null ? body : {});
 }
 
 // Chunk scoring utility for retrieval
-export function scoreChunkRelevance(queryStr: string, content: string, heading: string = ""): number {
+export function scoreChunkRelevance(queryStr, content, heading = "") {
   if (!queryStr.trim() || !content.trim()) return 0;
   const stopWords = new Set([
     "the", "is", "at", "which", "on", "a", "an", "and", "or", "to", "in", "for", "of",
@@ -164,29 +162,13 @@ export function scoreChunkRelevance(queryStr: string, content: string, heading: 
 }
 
 // Local chunking generator
-export function createLocalChunks(
-  text: string,
-  materialId: string,
-  materialName: string,
-  subject: string,
-  materialType: string
-) {
+export function createLocalChunks(text, materialId, materialName, subject, materialType) {
   const paragraphs = text
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
 
-  const chunks: Array<{
-    id: string;
-    materialId: string;
-    materialName: string;
-    subject: string;
-    type: string;
-    pageNumber: number;
-    heading: string;
-    chunkIndex: number;
-    content: string;
-  }> = [];
+  const chunks = [];
 
   let currentChunkText = "";
   let currentHeading = materialName;
@@ -244,7 +226,7 @@ export function createLocalChunks(
 // -----------------------------------------------------------------------------
 
 // 1. Health Check
-export async function handleHealth(_req: any, res: any) {
+export async function handleHealth(_req, res) {
   res.setHeader?.("Content-Type", "application/json");
   return res.status(200).json({
     success: true,
@@ -254,7 +236,7 @@ export async function handleHealth(_req: any, res: any) {
 }
 
 // 2. Study Material Processing & Multimodal Extraction
-export async function handleProcessMaterial(req: any, res: any) {
+export async function handleProcessMaterial(req, res) {
   res.setHeader?.("Content-Type", "application/json");
   if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
@@ -274,7 +256,7 @@ export async function handleProcessMaterial(req: any, res: any) {
 
     let extractedText = "";
     let summary = "";
-    let chunks: any[] = [];
+    let chunks = [];
 
     const isImageOrPdf =
       ["pdf", "png", "jpg", "jpeg", "webp"].includes(String(fileType).toLowerCase()) ||
@@ -329,14 +311,14 @@ Structure your response strictly as valid JSON matching this schema:
         });
 
         const rawText = response.text || "";
-        const parsed: any = cleanAndParseJson(rawText, {});
+        const parsed = cleanAndParseJson(rawText, {});
         extractedText = parsed.extractedText || "";
         summary = parsed.summary || "";
         if (!extractedText && rawText) {
           extractedText = rawText.replace(/```(?:json)?/gi, "").trim();
         }
         if (Array.isArray(parsed.chunks) && parsed.chunks.length > 0) {
-          chunks = parsed.chunks.map((c: any, idx: number) => ({
+          chunks = parsed.chunks.map((c, idx) => ({
             id: `chunk_${materialId}_${idx}`,
             materialId,
             materialName: fileName,
@@ -348,7 +330,7 @@ Structure your response strictly as valid JSON matching this schema:
             content: String(c.content || "").trim(),
           }));
         }
-      } catch (geminiErr: any) {
+      } catch (geminiErr) {
         if (textContent) {
           extractedText = textContent;
         } else if (base64Content) {
@@ -390,7 +372,7 @@ Structure your response strictly as valid JSON matching this schema:
       chunkCount: chunks.length,
       chunks
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini chat API failure:", error?.message || "Document processing error");
     return res.status(500).json({
       success: false,
@@ -401,7 +383,7 @@ Structure your response strictly as valid JSON matching this schema:
 }
 
 // 3. Multi-turn AI Study Chat
-export async function handleChat(req: any, res: any) {
+export async function handleChat(req, res) {
   res.setHeader?.("Content-Type", "application/json");
   if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
@@ -422,20 +404,14 @@ export async function handleChat(req: any, res: any) {
       return res.status(400).json({ success: false, error: "At least one message is required." });
     }
 
-    const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
     const queryPrompt = String(lastUserMsg?.text || "");
 
     let retrievedContext = "";
-    const referencedSources: Array<{
-      materialId: string;
-      materialName: string;
-      pageNumber?: number;
-      section?: string;
-      excerpt?: string;
-    }> = [];
+    const referencedSources = [];
 
     if (sourceMode !== "gemini_only" && selectedMaterials.length > 0) {
-      const allChunks: any[] = [];
+      const allChunks = [];
       let syllabusText = "";
 
       for (const mat of selectedMaterials) {
@@ -540,7 +516,7 @@ ${groundingConstraint}
 ${customInstructionsPrompt}
 ${formatGuideline}`;
 
-    const contents = messages.slice(-10).map((m: any, idx: number) => {
+    const contents = messages.slice(-10).map((m, idx) => {
       let text = String(m.text || "");
       if (idx === messages.slice(-10).length - 1 && retrievedContext) {
         text = `${retrievedContext}\n\n---\nStudent Question: ${text}`;
@@ -570,7 +546,7 @@ ${formatGuideline}`;
       sourceMode,
       answerFormat
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini chat API failure:", error?.message || "Internal error");
     return res.status(500).json({
       success: false,
@@ -580,7 +556,7 @@ ${formatGuideline}`;
 }
 
 // 4. Smart Notes Generator
-export async function handleNotes(req: any, res: any) {
+export async function handleNotes(req, res) {
   res.setHeader?.("Content-Type", "application/json");
   if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
@@ -656,7 +632,7 @@ Strictly return a valid JSON object matching this structure:
       result: parsed,
       modelUsed
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini chat API failure:", error?.message || "Notes generation error");
     return res.status(500).json({
       success: false,
@@ -666,7 +642,7 @@ Strictly return a valid JSON object matching this structure:
 }
 
 // 5. AI Quiz Generator
-export async function handleQuiz(req: any, res: any) {
+export async function handleQuiz(req, res) {
   res.setHeader?.("Content-Type", "application/json");
   if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
@@ -715,7 +691,7 @@ Strict JSON output format:
       questions: parsed.questions || [],
       modelUsed
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini chat API failure:", error?.message || "Quiz generation error");
     return res.status(500).json({
       success: false,
@@ -725,7 +701,7 @@ Strict JSON output format:
 }
 
 // 6. Quiz Feedback Evaluator
-export async function handleQuizFeedback(req: any, res: any) {
+export async function handleQuizFeedback(req, res) {
   res.setHeader?.("Content-Type", "application/json");
   if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
@@ -741,7 +717,7 @@ export async function handleQuizFeedback(req: any, res: any) {
     const answers = body.answers && typeof body.answers === "object" ? body.answers : {};
 
     const summaryReport = questions
-      .map((q: any, i: number) => {
+      .map((q, i) => {
         const studentAns = answers[i] || "No answer";
         const isCorrect = String(studentAns).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase();
         return `Q${i + 1}: ${q.question}\nStudent Answer: ${studentAns}\nCorrect: ${q.correctAnswer}\nStatus: ${isCorrect ? "CORRECT" : "INCORRECT"}`;
@@ -771,7 +747,7 @@ Keep it constructive, inspiring, and concise (under 250 words).`;
       feedback: response.text || "Great effort completing the quiz! Keep reviewing your missed questions.",
       modelUsed
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini chat API failure:", error?.message || "Quiz feedback error");
     return res.status(500).json({
       success: false,
@@ -781,7 +757,7 @@ Keep it constructive, inspiring, and concise (under 250 words).`;
 }
 
 // 7. AI Study Planner
-export async function handleStudyPlan(req: any, res: any) {
+export async function handleStudyPlan(req, res) {
   res.setHeader?.("Content-Type", "application/json");
   if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
@@ -841,7 +817,7 @@ Strict JSON format:
         "\nIncluded Study Materials available to student:\n" +
         includedMaterials
           .map(
-            (m: any) =>
+            (m) =>
               `- [ID: ${m.id || ""}] ${m.name || "Material"} (${m.type || "Document"}, Subject: ${m.subject || "General"})${m.description ? `: ${m.description}` : ""}`
           )
           .join("\n");
@@ -871,7 +847,7 @@ Generate an optimal schedule with between 8 and 24 actionable study tasks fallin
       plan: parsed,
       modelUsed
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini chat API failure:", error?.message || "Study plan error");
     return res.status(500).json({
       success: false,
@@ -881,7 +857,7 @@ Generate an optimal schedule with between 8 and 24 actionable study tasks fallin
 }
 
 // 8. Daily Reflection Analysis
-export async function handleReflection(req: any, res: any) {
+export async function handleReflection(req, res) {
   res.setHeader?.("Content-Type", "application/json");
   if (!checkGeminiApiKey(res)) return;
   const authUser = await requireAuth(req, res);
@@ -930,7 +906,7 @@ Output strictly JSON:
       result: parsed,
       modelUsed
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini chat API failure:", error?.message || "Reflection error");
     return res.status(500).json({
       success: false,
